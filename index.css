@@ -1,0 +1,530 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState } from 'react';
+import { Search, SlidersHorizontal, Tag, Star, ArrowUpDown, ChevronDown, Check, X, Bookmark, Cpu, HardDrive, Cpu as GpuIcon, Disc, Keyboard, Tv, ShieldCheck, ShoppingBag, MessageSquare, StarHalf, CornerDownLeft } from 'lucide-react';
+import { PCPart, Vendor, CategoryType, Rating, VendorListing } from '../types';
+
+interface PartsAggregatorProps {
+  parts: PCPart[];
+  vendors: Vendor[];
+  onAddRating: (vendorId: string, rating: Rating) => void;
+}
+
+export default function PartsAggregator({ parts, vendors, onAddRating }: PartsAggregatorProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryType | 'All'>('All');
+  const [selectedBrand, setSelectedBrand] = useState('All');
+  const [sortBy, setSortBy] = useState<'name' | 'listingsCount' | 'createdAt'>('name');
+
+  // Interactive Product Comparison modal state
+  const [comparePart, setComparePart] = useState<PCPart | null>(null);
+
+  // Vendor Detail rating portal state
+  const [ratingVendor, setRatingVendor] = useState<Vendor | null>(null);
+  
+  // Rating submission form
+  const [raterName, setRaterName] = useState('');
+  const [ratingValue, setRatingValue] = useState(5);
+  const [comment, setComment] = useState('');
+  const [ratingSuccess, setRatingSuccess] = useState(false);
+
+  // Unique lists for filtering
+  const brands = ['All', ...Array.from(new Set(parts.map((p) => p.brand)))];
+
+  // Filtering Logic
+  const filteredParts = parts.filter((part) => {
+    const matchesSearch = part.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          part.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          Object.keys(part.specs).some(k => part.specs[k].toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesCategory = selectedCategory === 'All' || part.category === selectedCategory;
+    const matchesBrand = selectedBrand === 'All' || part.brand === selectedBrand;
+    return matchesSearch && matchesCategory && matchesBrand;
+  });
+
+  // Sorting Logic
+  const sortedParts = [...filteredParts].sort((a, b) => {
+    if (sortBy === 'name') {
+       return a.name.localeCompare(b.name);
+    } else if (sortBy === 'listingsCount') {
+       return b.listings.length - a.listings.length;
+    } else {
+       return b.createdAt.localeCompare(a.createdAt);
+    }
+  });
+
+  // Category list in both Arabic/English
+  const categories: { id: CategoryType | 'All'; titleAr: string; titleEn: string; icon: any }[] = [
+    { id: 'All', titleAr: 'الكل', titleEn: 'All Components', icon: ShoppingBag },
+    { id: 'CPU', titleAr: 'المعالجات', titleEn: 'CPUs / Processors', icon: Cpu },
+    { id: 'GPU', titleAr: 'كروت الشاشة', titleEn: 'Graphic Cards', icon: Cpu },
+    { id: 'Motherboard', titleAr: 'اللوحة الأم', titleEn: 'Motherboards', icon: Disc },
+    { id: 'RAM', titleAr: 'الذاكرة العشوائية', titleEn: 'RAM Memory', icon: HardDrive },
+    { id: 'Storage', titleAr: 'التخزين والقرص', titleEn: 'SSD / HDD Storage', icon: Disc },
+    { id: 'Power Supply', titleAr: 'باور سبلاي', titleEn: 'Power Supplies', icon: SlidersHorizontal },
+    { id: 'Case', titleAr: 'الكيسات والمراوح', titleEn: 'Chassis & Case', icon: SlidersHorizontal },
+    { id: 'Monitor', titleAr: 'الشاشات', titleEn: 'Monitors', icon: Tv },
+    { id: 'Peripherals', titleAr: 'ملحقات وألعاب', titleEn: 'Peripherals', icon: Keyboard },
+  ];
+
+  const handleRatingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ratingVendor || !raterName || !comment) return;
+
+    const newRating: Rating = {
+      id: `rat_${Date.now()}`,
+      raterName,
+      ratingValue,
+      comment,
+      date: new Date().toISOString().split('T')[0]
+    };
+
+    onAddRating(ratingVendor.id, newRating);
+    setRatingSuccess(true);
+    setRaterName('');
+    setComment('');
+    
+    // Refresh local ratingVendor state so they see their review live instantly!
+    const updatedVendor = vendors.find(v => v.id === ratingVendor.id);
+    if (updatedVendor) {
+      setRatingVendor({
+        ...updatedVendor,
+        ratings: [newRating, ...updatedVendor.ratings]
+      });
+    }
+    
+    setTimeout(() => {
+      setRatingSuccess(false);
+    }, 3000);
+  };
+
+  const getCheapestPrice = (listings: VendorListing[]) => {
+    if (listings.length === 0) return null;
+    return Math.min(...listings.map((l) => l.priceIQD));
+  };
+
+  const calculateVendorAverageRating = (vendor: Vendor) => {
+    if (!vendor.ratings || vendor.ratings.length === 0) return 4.5; // High default
+    const total = vendor.ratings.reduce((sum, r) => sum + r.ratingValue, 0);
+    return parseFloat((total / vendor.ratings.length).toFixed(1));
+  };
+
+  return (
+    <div className="space-y-8" id="aggregator-core-portal">
+      
+      {/* Search and Filters Strip */}
+      <div className="bg-[#1e222b] border border-white/10 rounded-2xl p-6 shadow-xl space-y-4">
+        
+        <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+          <div>
+            <h4 className="text-lg font-bold text-white font-sans text-right lg:text-right w-full">فهرس قطع الحاسوب الموحد في العراق</h4>
+            <p className="text-slate-450 text-xs mt-0.5 text-right text-slate-400">قارن الأسعار الحية بالدينار العراقي (IQD) بين مكاتب شارع الصناعة وحول المحافظات فوراً.</p>
+          </div>
+
+          {/* Interactive Search Field */}
+          <div className="relative w-full lg:max-w-md">
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="ابحث عن معالج، كارت شاشة، أو مكتب معين..."
+              className="w-full bg-[#0c0e12] border border-white/10 rounded-xl pr-11 pl-4 py-3 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition-colors text-right"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              dir="rtl"
+            />
+          </div>
+        </div>
+
+        {/* Categories Carousel */}
+        <div className="border-t border-white/5 pt-4">
+          <span className="block text-[11px] font-bold text-slate-400 mb-2.5 text-right" dir="rtl">تصفية حسب صنف العتاد:</span>
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none snap-x" dir="rtl">
+            {categories.map((cat) => {
+              const IconComp = cat.icon;
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all shrink-0 flex items-center gap-2 border snap-start cursor-pointer ${
+                    isSelected
+                      ? 'bg-cyan-550/10 border-cyan-500 text-cyan-400 font-bold bg-cyan-500/10'
+                      : 'bg-[#0c0e12] border-white/5 text-slate-400 hover:border-white/10 hover:text-white'
+                  }`}
+                >
+                  <IconComp className="w-4 h-4" />
+                  <div className="text-right">
+                    <span className="block leading-none">{cat.titleAr}</span>
+                    <span className="block text-[8px] text-slate-500 font-normal mt-0.5">{cat.titleEn}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Secondary filters row */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/5 pt-4" dir="rtl">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Brand Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-semibold font-sans">الشركة المصنعة:</span>
+              <div className="flex gap-1.5 flex-wrap">
+                {brands.map((brand) => (
+                  <button
+                    key={brand}
+                    onClick={() => setSelectedBrand(brand)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                      selectedBrand === brand
+                        ? 'bg-cyan-500/10 border-cyan-500 text-cyan-400'
+                        : 'bg-[#0c0e12] border-white/5 text-slate-550 hover:text-slate-300 text-slate-405'
+                    }`}
+                  >
+                    {brand === 'All' ? 'الكل' : brand}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Sort selection */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-semibold font-sans">ترتيب المعروضات:</span>
+            <select
+              className="bg-[#0c0e12] border border-white/10 rounded-lg text-xs text-slate-300 py-1.5 px-3 focus:outline-none"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+            >
+              <option value="name">الاسم الأبجدي</option>
+              <option value="listingsCount">الأكثر طلباً وتوفيراً للمكاتب</option>
+              <option value="createdAt">المضاف حديثاً</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+
+      {/* CORE HARDWARE GRID */}
+      {sortedParts.length === 0 ? (
+        <div className="bg-[#1e222b] border border-white/10 rounded-2xl p-12 text-center" dir="rtl">
+          <SlidersHorizontal className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+          <h4 className="text-base font-bold text-white">لم نجد أي قطع تطابق مرشحات البحث الحالية</h4>
+          <p className="text-slate-500 text-xs mt-1 max-w-sm mx-auto">
+            جرب كتابة كلمة مختلفة أو تصفير تصفية الشركات لعرض نطاق قطع كارت الشاشة العراقي الأوسع.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {sortedParts.map((part) => {
+            const cheapestVal = getCheapestPrice(part.listings);
+            const activeListingsCount = part.listings.length;
+
+            return (
+              <div
+                key={part.id}
+                className="bg-[#1e222b] border border-white/10 rounded-2xl overflow-hidden shadow-xl hover:border-cyan-500/30 transition-all flex flex-col justify-between group h-full"
+              >
+                
+                {/* Visual Header Grid Showcase */}
+                <div className={`h-24 bg-gradient-to-br ${part.imageGradient} p-4 flex flex-col justify-between relative`}>
+                  <div className="absolute top-2 right-2 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded text-[10px] font-bold text-slate-200">
+                    {part.category}
+                  </div>
+                  
+                  <div className="mt-auto">
+                    <span className="text-[10px] font-mono tracking-widest text-slate-300 block leading-none uppercase">{part.brand}</span>
+                    <h5 className="text-sm font-black text-white mt-1 line-clamp-1 leading-none group-hover:text-cyan-400 transition-colors">
+                      {part.name}
+                    </h5>
+                  </div>
+                </div>
+
+                {/* Specs Summary list inside the card body */}
+                <div className="p-5 flex-1 flex flex-col justify-between space-y-4" dir="rtl">
+                  
+                  <div className="space-y-2">
+                    <span className="block text-[11px] font-bold text-slate-400 border-b border-white/5 pb-1">المواصفات الأساسية:</span>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                      {Object.keys(part.specs).slice(0, 4).map((specName) => (
+                        <div key={specName} className="text-slate-300 truncate">
+                          <span className="text-slate-500">{specName}:</span> {part.specs[specName]}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Pricing Comparison highlights */}
+                  <div className="border-t border-white/5 pt-4 space-y-3">
+                    {activeListingsCount > 0 && cheapestVal ? (
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">أرخص سعر متوفر بالسوق:</span>
+                          <span className="text-base font-black text-emerald-450 font-sans text-emerald-400">
+                            {cheapestVal.toLocaleString('ar-IQ')} د.ع
+                          </span>
+                        </div>
+                        <div className="text-left">
+                          <span className="text-[10px] text-slate-500 block">عدد العروض:</span>
+                          <span className="px-2 py-0.5 bg-[#0c0e12] rounded text-xs text-slate-300 font-bold border border-white/5">
+                            {activeListingsCount} مكاتب محلية
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-slate-505 text-xs italic text-center py-1 bg-[#0c0e12] rounded border border-white/5 text-slate-400">
+                        لا تتوفر أسعار معروضة للقطعة حالياً
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions buttons */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setComparePart(part)}
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#0c0e12] hover:bg-cyan-600 hover:text-black text-cyan-400 border border-white/5 group-hover:border-cyan-500/30 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer hover:shadow-lg"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      <span>مقارنة الأسعار الفورية ({activeListingsCount})</span>
+                    </button>
+                  </div>
+
+                </div>
+
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MODAL 1: COMPARE PRICES POPUP SHOWN ON SELECTION */}
+      {comparePart && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-[#1e222b] border border-cyan-500/30 rounded-2xl max-w-3xl w-full p-6 shadow-2xl relative" dir="rtl">
+            
+            <button
+              onClick={() => setComparePart(null)}
+              className="absolute top-4 left-4 text-slate-400 hover:text-white text-xs font-bold py-1 px-2.5 bg-[#0c0e12] rounded-lg border border-white/5"
+            >
+              إغلاق ✕
+            </button>
+
+            <div className="border-b border-white/10 pb-4 mb-5">
+              <span className="text-xs text-cyan-400 font-bold uppercase tracking-wider font-mono">{comparePart.brand}</span>
+              <h3 className="text-xl font-bold text-white font-sans mt-1">{comparePart.name}</h3>
+              <p className="text-slate-400 text-xs mt-1">جدول تصفية الأسعار الصادر عن مكاتب الكمبيوتر الرسمية في العراق مرتبة من الأقل للأعلى.</p>
+            </div>
+
+            {/* Price list and ratings comparison table */}
+            {comparePart.listings.length === 0 ? (
+              <div className="text-center py-10 text-slate-500 text-sm">
+                لم يتم تسجيل أي عروض أسعار لهذا البند بعد من قبل المكاتب المعتمدة.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <span className="block text-xs font-bold text-slate-400">عروض الأسعار المتاحة بالسوق:</span>
+                
+                <div className="space-y-2.5 max-h-[400px] overflow-y-auto">
+                  {[...comparePart.listings]
+                    .sort((a, b) => a.priceIQD - b.priceIQD)
+                    .map((listing, index) => {
+                      const vendor = vendors.find((v) => v.id === listing.vendorId);
+                      if (!vendor) return null;
+
+                      const avgRating = calculateVendorAverageRating(vendor);
+
+                      return (
+                        <div
+                          key={index}
+                          className="bg-[#0c0e12] p-4 rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-cyan-500/20 transition-all"
+                        >
+                          {/* Left: Price and Availability info */}
+                          <div className="flex items-center justify-between sm:justify-end gap-6 order-2 sm:order-1">
+                            <div className="text-right sm:text-left">
+                              <span className="text-[10px] text-slate-500 block">السعر النهائي المعروض:</span>
+                              <span className="text-lg font-black text-emerald-400 font-sans">
+                                {listing.priceIQD.toLocaleString('ar-IQ')} د.ع
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="text-[10px] text-slate-500 block">صلاحية المخزون والضمان:</span>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  listing.isAvailable 
+                                    ? 'bg-emerald-500/10 text-emerald-500' 
+                                    : 'bg-rose-500/10 text-rose-500'
+                                }`}>
+                                  {listing.isAvailable ? 'متوفر فوري' : 'غير متوفر / حجز'}
+                                </span>
+                                {listing.warrantyMonths > 0 && (
+                                  <span className="px-2 py-0.5 bg-[#16191f] text-slate-300 rounded text-[10px] font-bold border border-white/5">
+                                    ضمان {listing.warrantyMonths} أشهر
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right: Vendor Brand and Custom Rating Actions */}
+                          <div className="order-1 sm:order-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-sm">{vendor.nameAr || vendor.name}</span>
+                              <span className="text-[10px] bg-cyan-500/10 text-cyan-400 font-bold px-1.5 py-0.5 rounded">
+                                {vendor.province.split(' ')[0]}
+                              </span>
+                            </div>
+                            <p className="text-slate-400 text-xs mt-1">{vendor.address}</p>
+                            
+                            {/* SELLER RATING LINK: وميزة تقييم البائع */}
+                            <button
+                              onClick={() => {
+                                setRatingVendor(vendor);
+                                setComparePart(null);
+                              }}
+                              className="mt-2 text-xs text-cyan-400 hover:text-cyan-300 font-bold inline-flex items-center gap-1 hover:underline transition-all cursor-pointer"
+                            >
+                              <div className="flex items-center text-amber-500 gap-0.5">
+                                <Star className="w-3 h-3 fill-amber-500" />
+                                <span className="font-sans font-black">{avgRating}</span>
+                              </div>
+                              <span className="text-slate-500">|</span>
+                              <span>ميزة تقييم البائع وآراء العملاء ({vendor.ratings?.length || 0})</span>
+                              <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
+                            </button>
+                          </div>
+
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Footer with compliance warnings */}
+            <div className="mt-6 border-t border-white/5 pt-4 text-[10px] text-slate-500 text-center">
+              * الأسعار الواردة أعلاه هي لغرض المقارنة الحرة والشفافة لمجابهة الاحتكار السوقي. اتصل بالمكتب ومطابقة القطع والأرقام قبل الشراء.
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: VENDOR RATING / REVIEW PORTAL (وميزة تقييم البائع) */}
+      {ratingVendor && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-[#1e222b] border border-cyan-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative" dir="rtl">
+            
+            <button
+              onClick={() => setRatingVendor(null)}
+              className="absolute top-4 left-4 text-slate-400 hover:text-white text-xs font-bold py-1 px-2.5 bg-[#0c0e12] rounded-lg border border-white/5"
+            >
+              رجوع ✕
+            </button>
+
+            <div className="border-b border-white/10 pb-4 mb-5">
+              <span className="text-xs text-cyan-400 font-bold uppercase tracking-wider font-mono">بوابة الثقة وحماية المستهلك العراقي</span>
+              <h3 className="text-xl font-bold text-white font-sans mt-1">تقييمات مكتب: {ratingVendor.nameAr || ratingVendor.name}</h3>
+              <p className="text-slate-450 text-xs mt-1 text-slate-450">
+                تصفح تقييمات الجمهور الحقيقية، أو أضف تجربتك لمساعدة المجتمع العراقي في اتخاذ قرارات تسوق ممتازة.
+              </p>
+            </div>
+
+            {/* Reviews display list */}
+            <div className="space-y-3 mb-6">
+              <span className="block text-xs font-bold text-slate-400">آراء وتقييمات العملاء السابقة:</span>
+              
+              <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                {(!ratingVendor.ratings || ratingVendor.ratings.length === 0) ? (
+                  <p className="text-slate-500 text-xs italic py-4 text-center">لا توجد تقييمات مسجلة لهذا البائع بعد. كن أول من يقيم!</p>
+                ) : (
+                  ratingVendor.ratings.map((rat) => (
+                    <div key={rat.id} className="bg-[#0c0e12] p-3 rounded-xl border border-white/5 text-xs space-y-1">
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="font-bold text-slate-200">{rat.raterName}</span>
+                        <div className="flex text-amber-500 gap-0.5">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star 
+                              key={i} 
+                              className={`w-3 h-3 ${i < rat.ratingValue ? 'fill-amber-500 text-amber-500' : 'text-slate-800'}`} 
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-normal">"{rat.comment}"</p>
+                      <span className="block text-[9px] text-slate-600 font-mono text-left">{rat.date}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Submit new review form */}
+            <form onSubmit={handleRatingSubmit} className="border-t border-white/5 pt-4 space-y-4">
+              <span className="block text-xs font-bold text-cyan-400">أضف تقييمك وتجربتك الشخصية مع المكتب:</span>
+              
+              {ratingSuccess && (
+                <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3 text-xs text-emerald-250 text-emerald-200">
+                  ✓ تم تعبئة وإدراج تقييمك وتحديث التقييم العام للمكتب بنجاح!
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">اسمك الكامل أو اللقب *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: حسين البغدادي"
+                    className="w-full bg-[#0c0e12] border border-white/10 rounded-lg px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
+                    value={raterName}
+                    onChange={(e) => setRaterName(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">العلامة النجمية (التقييم) *</label>
+                  <div className="flex gap-2 items-center h-8">
+                    {[1, 2, 3, 4, 5].map((stars) => (
+                      <button
+                        key={stars}
+                        type="button"
+                        onClick={() => setRatingValue(stars)}
+                        className="text-amber-550 hover:scale-115 transition-transform"
+                      >
+                        <Star className={`w-6 h-6 ${stars <= ratingValue ? 'fill-amber-555 text-amber-500' : 'text-slate-700'}`} />
+                      </button>
+                    ))}
+                    <span className="text-xs text-slate-400 font-bold mr-2">({ratingValue} من 5)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">تفاصيل تجربتك الشراء والأسعار والضمان *</label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="كيف كانت معاملة موظفي الضمان؟ وهل كانت الأسعار مطابقة للموقع؟..."
+                  className="w-full bg-[#0c0e12] border border-white/10 rounded-lg px-3 py-2 text-slate-100 text-xs focus:outline-none focus:border-cyan-500 resize-none"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-lg shadow-cyan-600/10"
+              >
+                حفظ التقييم وتحديث النسبة لـ {ratingVendor.nameAr || ratingVendor.name}
+              </button>
+            </form>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
